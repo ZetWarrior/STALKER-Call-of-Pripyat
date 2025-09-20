@@ -1,7 +1,5 @@
-#pragma once
 #ifndef _D3D_EXT_internal
 #define _D3D_EXT_internal
-#include "xrCore/FixedVector.h"
 
 #ifndef NO_XR_LIGHT
 struct Flight
@@ -96,7 +94,7 @@ public:
 #endif
 
 #ifndef NO_XR_VDECLARATOR
-struct VDeclarator : public svector<D3DVERTEXELEMENT9, MAXD3DDECLLENGTH + 1>
+struct VDeclarator : public svector < D3DVERTEXELEMENT9, MAXD3DDECLLENGTH + 1 >
 {
     void set(u32 FVF)
     {
@@ -106,16 +104,17 @@ struct VDeclarator : public svector<D3DVERTEXELEMENT9, MAXD3DDECLLENGTH + 1>
     void set(D3DVERTEXELEMENT9* dcl)
     {
         resize(D3DXGetDeclLength(dcl) + 1);
-        CopyMemory(begin(), dcl, size() * sizeof(D3DVERTEXELEMENT9));
+        CopyMemory(begin(), dcl, size()*sizeof(D3DVERTEXELEMENT9));
     }
-    void set(const VDeclarator& d) { *this = d; }
+    void set(const VDeclarator& d)
+    {
+        *this = d;
+    }
     u32 vertex() { return D3DXGetDeclVertexSize(begin(), 0); }
     BOOL equal(VDeclarator& d)
     {
-        if (size() != d.size())
-            return false;
-        else
-            return 0 == memcmp(begin(), d.begin(), size() * sizeof(D3DVERTEXELEMENT9));
+        if (size() != d.size()) return false;
+        else return 0 == memcmp(begin(), d.begin(), size()*sizeof(D3DVERTEXELEMENT9));
     }
 };
 #endif

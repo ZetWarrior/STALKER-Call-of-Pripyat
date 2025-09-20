@@ -1,26 +1,27 @@
-# exclude all dot files except .git, appveyor and travis files
+# exclude all dot files except .gitignore
 .*
-!.git*
-!.appveyor*
-!.travis.yml
+!.gitignore
 
 # exclude binaries and temporary files
-CMakeCache.txt
-cmake_install.cmake
-cmake-build-debug
-install_manifest.txt
 bin/
+bin_plugs/
 intermediate/
 intermediate_plugs/
 lib/
-CMakeFiles/
 *.aps
-*.user
-*.PVS-Studio.*
-*.gch
-*.so
-*.a
-*.o
 
-# exclude doxygen output
-doc/doxygen/html/*
+# exclude all third-party libraries
+src/Externals/3dsmax
+src/Externals/BugTrap
+src/Externals/FreeImage
+src/Externals/jpeg
+src/Externals/libogg-1.1.4
+src/Externals/libtheora-1.1.1
+src/Externals/libvorbis-1.2.3
+src/Externals/lightwave
+src/Externals/MagicSoftware
+src/Externals/maya
+src/Externals/nvapi
+src/Externals/OpenAutomate
+src/Externals/OpenSSL
+src/Externals/zlib

@@ -20,7 +20,8 @@
 #define TYPELIST_INC_
 
 #include "static_check.h"
-#include "NullType.h"
+#include "Nulltype.h"
+#include "TypeManip.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 // macros TYPELIST_1, TYPELIST_2, ... TYPELIST_50
@@ -424,7 +425,7 @@ namespace Loki
 // Invocation :
 // is_Typelist<T>::value
 // returns a compile-time boolean constant containing true iff T is some Typelist<T1,T2>
-// is_Typelist<T>::type_tag
+// is_Typelist<T>::type_id
 // returns a compile-time unsigned constant containing 
 // 1 iff T == Typelist<T1,T2>, 2 iff T == NullType and 3 otherwise
 ////////////////////////////////////////////////////////////////////////////////
@@ -440,25 +441,38 @@ namespace Loki
         };
 
         template<typename T>
-        struct is_Typelist : std::false_type
+        struct is_Typelist
         {
-            static constexpr int type_it = NoneList_ID;
-            using type_tag = NoneList_tag;
+        private:
+            typedef char (&ye1)[Typelist_ID];
+            typedef char (&ye2)[NullType_ID];
+            typedef char (&no) [NoneList_ID];
+
+            template<typename Head, typename Tail>
+            static ye1 check(Type2Type< Typelist<Head, Tail> >);
+            static ye2 check(Type2Type<NullType>);
+
+            static no  check(...);
+
+        public:
+            #if (_MSC_VER >= 1300)
+              // VC7 fail NPS_HierarchyGenerators.h if this one is enum
+              static const unsigned int type_id = sizeof(check( Type2Type<T>() ));
+            #else
+						  enum { type_id = sizeof(check( Type2Type<T>() )) };
+            #endif
+
+            enum { value = type_id != sizeof(no) };
+
+            typedef typename Select
+            <
+                type_id == Typelist_ID, 
+                Typelist_tag,
+                typename Select<type_id == NullType_ID, NullType_tag, NoneList_tag>::Result
+            > 
+            ::Result type_tag;
         };
 
-        template<typename Head, typename Tail>
-        struct is_Typelist<Typelist<Head, Tail>> : std::true_type
-        {
-            static constexpr int type_id = Typelist_ID;
-            using type_tag = Typelist_tag;
-        };
-
-        template<>
-        struct is_Typelist<NullType> : std::true_type
-        {
-            static constexpr int type_id = NullType_ID;
-            using type_tag = NullType_tag;
-        };
 
 
 #ifndef TL_FAST_COMPILATION
@@ -488,11 +502,22 @@ typedef char _type_##_is_not_a_Typelist[true]
         
         template <> 
         struct Length<NullType>
-        : std::integral_constant<int, 0> {};
+        {
+            enum { value = 0 };
+        };
+        
+        template <class TList>
+        struct Length
+        {
+        private:
+            ASSERT_TYPELIST(TList);
+            
+            typedef typename TList::Head Head;
+            typedef typename TList::Tail Tail;
 
-        template <class Head, class Tail>
-        struct Length<Typelist<Head, Tail>>
-        : std::integral_constant<int, 1 + Length<Tail>::value> {};
+        public:
+            enum { value = 1 + Length<Tail>::value };
+        };
 
 ////////////////////////////////////////////////////////////////////////////////
 // class template TypeAt
@@ -507,18 +532,28 @@ typedef char _type_##_is_not_a_Typelist[true]
         template <class TList, unsigned int index> 
         struct TypeAt
         {
-            using Result = typename TypeAt<typename TList::Tail, index - 1>::Result;
-
+            typedef typename TList::Head Head;
+            typedef typename TList::Tail Tail;
+        
         private:
             ASSERT_TYPELIST(TList);
-        };
 
-        template <class TList>
-        struct TypeAt<TList, 0>
-        {
-            using Result = typename TList::Head;
-        };
+            template<unsigned int i>
+            struct In
+            {
+                typedef typename TypeAt<Tail, i - 1>::Result Result;
+            };
 
+            template<>
+            struct In<0>
+            {
+                typedef Head Result;
+            };
+
+        public:
+            typedef typename In<index>::Result Result;
+        };
+        
 ////////////////////////////////////////////////////////////////////////////////
 // class template TypeAtNonStrict
 // Finds the type at a given index in a typelist
@@ -535,23 +570,37 @@ typedef char _type_##_is_not_a_Typelist[true]
         template <class TList, unsigned int index, typename DefaultType = NullType> 
         struct TypeAtNonStrict
         {
-            using Tail = typename TList::Tail;
-            using Result = typename TypeAtNonStrict<Tail, index - 1, DefaultType>::Result;
-
+            typedef typename TList::Head Head;
+            typedef typename TList::Tail Tail;
+        
         private:
             ASSERT_TYPELIST(TList);
-        };
 
-        template <unsigned int index, typename DefaultType>
-        struct TypeAtNonStrict<NullType, index, DefaultType>
-        {
-            using Result = DefaultType;
-        };
+            template<class TList1,unsigned int i>
+            struct In
+            {
+                typedef typename TypeAtNonStrict
+                <
+                    typename TList1::Tail, 
+                    i - 1,
+                    DefaultType
+                >
+                ::Result Result;
+            };
 
-        template <class TList, typename DefaultType>
-        struct TypeAtNonStrict<TList, 0, DefaultType>
-        {
-            using Result = typename TList::Head;
+            template<>
+            struct In<Typelist<Head, Tail>, 0>
+            {
+                typedef Head Result;
+            };
+
+            template<>
+            struct In<NullType, index>
+            {
+                typedef DefaultType Result;
+            };
+        public:
+            typedef typename In<TList, index>::Result Result;
         };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -559,26 +608,45 @@ typedef char _type_##_is_not_a_Typelist[true]
 // Finds the index of a type in a typelist
 // Invocation (TList is a typelist and T is a type):
 // IndexOf<TList, T>::value
-// returns the position of T in TList, or -1 if T is not found in TList
+// returns the position of T in TList, or NullType if T is not found in TList
 ////////////////////////////////////////////////////////////////////////////////
 
-        template <class TList, class T>
-        struct IndexOf;
+        template <class TList, class T> 
+        struct IndexOf
+        {
+            typedef typename TList::Head Head;
+            typedef typename TList::Tail Tail;
+        
+        private:
+            ASSERT_TYPELIST(TList);
 
-        template <class T>
-        struct IndexOf<NullType, T>
-            : std::integral_constant<int, -1>
-        {};
+            template<class TList1>
+            struct In
+            {
+            private:
+                typedef typename TList1::Tail Tail;
 
-        template <class Tail, class T>
-        struct IndexOf<Typelist<T, Tail>, T>
-            : std::integral_constant<int, 0>
-        {};
+                enum { temp = (IndexOf<Tail, T>::value) };
 
-        template <class Head, class Tail, class T>
-        struct IndexOf<Typelist<Head, Tail>, T>
-            : std::integral_constant<int, 1 + IndexOf<Tail, T>::value>
-        {};
+            public:
+                enum { value = temp == -1 ? -1 : 1 + temp  };
+            };
+
+            template<>
+            struct In< Typelist<T, Tail> >
+            {
+                enum { value = 0 };
+            };
+
+            template<>
+            struct In<NullType>
+            {
+                enum { value = -1 };
+            };
+
+        public:
+            enum { value = In<TList>::value };
+        };
 
 ////////////////////////////////////////////////////////////////////////////////
 // class template Append
@@ -588,23 +656,43 @@ typedef char _type_##_is_not_a_Typelist[true]
 // returns a typelist that is TList followed by T and NullType-terminated
 ////////////////////////////////////////////////////////////////////////////////
 
-        template <class TList, class T>
-        struct Append;
-
-        template <class Head, class Tail, class T>
-        struct Append<Typelist<Head, Tail>, T>
+        template <class TList, class T> 
+        struct Append
         {
-            using Result = Typelist<Head, typename Append<Tail, T>::Result>;
-        };
+            typedef typename TList::Head Head;
+            typedef typename TList::Tail Tail;
+        
+        private:
+            ASSERT_TYPELIST(TList);
 
-        template <class T>
-        struct Append<NullType, T>
-        {
-            using Result = std::conditional_t<is_Typelist<T>::value,
-                T,
-                TYPELIST_1(T)>;
-        };
+            template<class TList1>
+            struct In
+            {
+                typedef typename TList1::Tail Tail;
 
+                typedef Typelist
+                <
+                    Head, 
+                    typename Append<Tail, T>::Result
+                > 
+                Result;
+            };
+
+            template<>
+            struct In<NullType>
+            {
+                typedef typename Select
+                <
+                    is_Typelist<T>::value, 
+                    T, TYPELIST_1(T) 
+                >
+                ::Result Result;
+            };
+
+        public:
+            typedef typename In<TList>::Result Result;
+        };
+        
 ////////////////////////////////////////////////////////////////////////////////
 // class template Erase
 // Erases the first occurence, if any, of a type in a typelist
@@ -613,23 +701,43 @@ typedef char _type_##_is_not_a_Typelist[true]
 // returns a typelist that is TList without the first occurence of T
 ////////////////////////////////////////////////////////////////////////////////
 
-        template <class TList, class T>
-        struct Erase;
-
-        template <class Head, class Tail, class T>
-        struct Erase<Typelist<Head, Tail>, T>
+        template <class TList, class T> 
+        struct Erase
         {
-            using Result = std::conditional_t<std::is_same_v<Head, T>,
-                Tail,
-                Typelist<Head, typename Erase<Tail, T>::Result>>;
-        };
+            typedef typename TList::Head Head;
+            typedef typename TList::Tail Tail;
+        
+        private:
+            ASSERT_TYPELIST(TList);
 
-        template <class T>
-        struct Erase<NullType, T>
-        {
-            using Result = NullType;
-        };
+            template<class TList1>
+            struct In
+            {
+                typedef typename TList1::Tail Tail;
 
+                typedef Typelist
+                <
+                    Head, 
+                    typename Erase<Tail, T>::Result
+                >
+                Result;
+            };
+
+            template<>
+            struct In< Typelist<T, Tail> >
+            {
+                typedef Tail Result;
+            };
+
+            template<>
+            struct In<NullType>
+            {
+                typedef NullType Result;
+            };
+
+        public:
+            typedef typename In<TList>::Result Result;
+        };
 
 ////////////////////////////////////////////////////////////////////////////////
 // class template EraseAll
@@ -639,21 +747,40 @@ typedef char _type_##_is_not_a_Typelist[true]
 // returns a typelist that is TList without any occurence of T
 ////////////////////////////////////////////////////////////////////////////////
 
-        template <class TList, class T>
-        struct EraseAll;
-
-        template <class Head, class Tail, class T>
-        struct EraseAll<Typelist<Head, Tail>, T>
+        template <class TList, class T> 
+        struct EraseAll
         {
-            using Result = std::conditional_t<std::is_same_v<Head, T>,
-                typename EraseAll<Tail, T>::Result,
-                Typelist<Head, typename EraseAll<Tail, T>::Result>>;
-        };
+            typedef typename TList::Head Head;
+            typedef typename TList::Tail Tail;
+        
+        private:
+            ASSERT_TYPELIST(TList);
 
-        template <class T>
-        struct EraseAll<NullType, T>
-        {
-            using Result = NullType;
+            template<class TList1>
+            struct In
+            {
+            private:
+                typedef typename TList1::Tail Tail;
+                typedef typename EraseAll<Tail, T>::Result TailResult;
+            
+            public:
+                typedef typename Select
+                <
+                    IsSameType<Head, T>::value,
+                    TailResult,
+                    Typelist<Head, TailResult>
+                >
+                ::Result Result;
+            };
+
+            template<>
+            struct In<NullType>
+            {
+                typedef NullType Result;
+            };
+
+        public:
+            typedef typename In<TList>::Result Result;
         };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -663,13 +790,13 @@ typedef char _type_##_is_not_a_Typelist[true]
 // NoDuplicates<TList, T>::Result
 ////////////////////////////////////////////////////////////////////////////////
 
-        template <class TList>
+        template <class TList> 
         struct NoDuplicates
         {
         private:
             typedef typename TList::Head Head;
             typedef typename TList::Tail Tail;
-
+        
             ASSERT_TYPELIST(TList);
 
             typedef typename NoDuplicates<Tail>::Result L1;
@@ -678,8 +805,8 @@ typedef char _type_##_is_not_a_Typelist[true]
         public:
             typedef Typelist<Head, L2> Result;
         };
-
-        template <>
+        
+        template <> 
         struct NoDuplicates<NullType>
         {
             typedef NullType Result;
@@ -693,21 +820,42 @@ typedef char _type_##_is_not_a_Typelist[true]
 // returns a typelist in which the first occurence of T is replaced with U
 ////////////////////////////////////////////////////////////////////////////////
 
-        template <class TList, class T, class U>
-        struct Replace;
-
-        template <class Head, class Tail, class T, class U>
-        struct Replace<Typelist<Head, Tail>, T, U>
+        template <class TList, class T, class U> 
+        struct Replace
         {
-            using Result = std::conditional_t<std::is_same_v<Head, T>,
-                Typelist<U, Tail>,
-                Typelist<Head, typename Replace<Tail, T, U>::Result>>;
-        };
+            typedef typename TList::Head Head;
+            typedef typename TList::Tail Tail;
+        
+        private:
+            ASSERT_TYPELIST(TList);
 
-        template <class T, class U>
-        struct Replace<NullType, T, U>
-        {
-            using Result = NullType;
+            template<class TList1>
+            struct In
+            {
+                typedef typename TList1::Tail Tail;
+
+                typedef Typelist
+                <
+                    Head, 
+                    typename Replace<Tail, T, U>::Result
+                >
+                Result;
+            };
+
+            template<>
+            struct In< Typelist<T, Tail> >
+            {
+                typedef Typelist<U, Tail> Result;
+            };
+
+            template<>
+            struct In<NullType>
+            {
+                typedef NullType Result;
+            };
+
+        public:
+            typedef typename In<TList>::Result Result;
         };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -718,21 +866,40 @@ typedef char _type_##_is_not_a_Typelist[true]
 // returns a typelist in which all occurences of T is replaced with U
 ////////////////////////////////////////////////////////////////////////////////
 
-        template <class TList, class T, class U>
-        struct ReplaceAll;
-
-        template <class Head, class Tail, class T, class U>
-        struct ReplaceAll<Typelist<Head, Tail>, T, U>
+        template <class TList, class T, class U> 
+        struct ReplaceAll
         {
-            using Result = std::conditional_t<std::is_same_v<Head, T>,
-                Typelist<U, typename ReplaceAll<Tail, T, U>::Result>,
-                Typelist<Head, typename ReplaceAll<Tail, T, U>::Result>>;
-        };
+            typedef typename TList::Head Head;
+            typedef typename TList::Tail Tail;
+        
+        private:
+            ASSERT_TYPELIST(TList);
 
-        template <class T, class U>
-        struct ReplaceAll<NullType, T, U>
-        {
-            using Result = NullType;
+            template<class TList1>
+            struct In
+            {
+            private:
+                typedef typename TList1::Tail Tail;
+                typedef typename ReplaceAll<Tail, T, U>::Result TailResult;
+            
+            public:
+                typedef typename Select
+                <
+                    IsSameType<Head, T>::value,
+                    Typelist<U,    TailResult>,
+                    Typelist<Head, TailResult>
+                >
+                ::Result Result;
+            };
+
+            template<>
+            struct In<NullType>
+            {
+                typedef NullType Result;
+            };
+
+        public:
+            typedef typename In<TList>::Result Result;
         };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -774,27 +941,42 @@ typedef char _type_##_is_not_a_Typelist[true]
 // returns the type in TList that's the most derived from T
 ////////////////////////////////////////////////////////////////////////////////
 
-        template <class TList, class T>
-        struct MostDerived;
-
-        template <class Head, class Tail, class T>
-        struct MostDerived<Typelist<Head, Tail>, T>
+        template <class TList, class T> 
+        struct MostDerived
         {
+            typedef typename TList::Head Head;
+            typedef typename TList::Tail Tail;
+        
         private:
-            using Candidate = typename MostDerived<Tail, T>::Result;
+            ASSERT_TYPELIST(TList);
+
+            template<class TList1>
+            struct In
+            {
+            private:
+                typedef typename TList1::Tail Tail;
+                typedef typename TList1::Head Head;
+                typedef typename MostDerived<Tail, T>::Result Candidate;
+            
+            public:
+                typedef typename Select
+                <
+                    SUPERSUBCLASS(Candidate, Head),
+                    Head, Candidate
+                >
+                ::Result Result;
+            };
+
+            template<>
+            struct In<NullType>
+            {
+                typedef T Result;
+            };
 
         public:
-            using Result = std::conditional_t<std::is_base_of_v<Candidate, Head>,
-                Head,
-                Candidate>;
+            typedef typename In<TList>::Result Result;
         };
-
-        template <class T>
-        struct MostDerived<NullType, T>
-        {
-            using Result = T;
-        };
-
+        
 ////////////////////////////////////////////////////////////////////////////////
 // class template DerivedToFront
 // Arranges the types in a typelist so that the most derived types appear first

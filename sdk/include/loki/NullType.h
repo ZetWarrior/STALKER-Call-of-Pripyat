@@ -15,7 +15,6 @@
 
 // Last update: May 19, 2002
 
-#pragma once
 #ifndef NULLTYPE_INC_
 #define NULLTYPE_INC_
 
